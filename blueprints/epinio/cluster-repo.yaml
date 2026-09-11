@@ -1,0 +1,7 @@
+# Chart source prerequisite. Keep outside the Blueprint-only catalog stream.
+apiVersion: catalog.cattle.io/v1
+kind: ClusterRepo
+metadata:
+  name: epinio
+spec:
+  url: https://epinio.github.io/helm-charts
