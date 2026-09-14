@@ -1,4 +1,7 @@
-# Local demo: uses public example passwords. See ../epinio/README.md.
+# Catalog entry: import dev/blueprints.yaml, then select Epinio and click Install.
+# Requires AIF HTTPS chart-source support; applying this file only registers the Blueprint.
+# Shared resources: ClusterIssuers, namespace workspace, and NodePort 30500. Install once per cluster.
+# Export the client CA: kubectl -n cert-manager get secret epinio-ca-root -o jsonpath='{.data.tls\.crt}' | base64 -d > epinio-ca.crt
 apiVersion: ai-factory.suse.com/v1alpha1
 kind: Blueprint
 metadata:
