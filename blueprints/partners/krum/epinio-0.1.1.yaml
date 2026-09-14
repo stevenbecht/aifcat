@@ -12,7 +12,7 @@ metadata:
 spec:
   displayName: Epinio
   version: 0.1.1
-  source: Krumware
+  source: Custom
   description: >-
     Epinio 1.14.2 with its standalone UI, source storage, and image registry.
     Local demo at https://epinio.192.168.2.100.sslip.io with administrator
