@@ -1,0 +1,71 @@
+# Local demo: uses public example passwords. See ../epinio/README.md.
+apiVersion: ai-factory.suse.com/v1alpha1
+kind: Blueprint
+metadata:
+  name: epinio-0-1-1
+  labels:
+    ai-factory.suse.com/blueprint-name: epinio
+    ai-factory.suse.com/blueprint-version: 0.1.1
+spec:
+  displayName: Epinio
+  version: 0.1.1
+  source: Custom
+  description: >-
+    Epinio 1.14.2 with its standalone UI, source storage, and image registry.
+    Local demo at https://epinio.192.168.2.100.sslip.io with administrator
+    admin / Epinio-Demo-2026! and a public example registry password.
+    Requires existing Traefik, cert-manager, and a default StorageClass.
+    Install once per cluster in namespace epinio. Replace example passwords
+    before using this outside the local demo.
+  components:
+    - chartRepo: https://epinio.github.io/helm-charts
+      chartName: epinio
+      chartVersion: 1.14.2
+      values:
+        global:
+          domain: 192.168.2.100.sslip.io
+          registryPassword: Epinio-Registry-Demo-2026!
+          tlsIssuer: epinio-ca
+          customTlsIssuer: ""
+          dex:
+            # This chart's Dex template also creates users with known passwords.
+            enabled: false
+        api:
+          users:
+            - username: admin
+              password: Epinio-Demo-2026!
+              roles: [admin]
+              workspaces: []
+        ingress:
+          ingressClassName: traefik
+        certManager:
+          install: false
+          enabled: true
+        certManagerNamespace: cert-manager
+        containerregistry:
+          storage:
+            emptyDir: false
+            size: 10Gi
+        seaweedfs:
+          # Use the cluster's provisioner instead of upstream hostPath defaults.
+          s3:
+            logs:
+              type: emptyDir
+          master:
+            data:
+              type: persistentVolumeClaim
+              size: 1Gi
+            logs:
+              type: emptyDir
+          filer:
+            data:
+              type: persistentVolumeClaim
+              size: 1Gi
+            logs:
+              type: emptyDir
+          volume:
+            dataDirs:
+              - name: data1
+                type: persistentVolumeClaim
+                size: 10Gi
+                maxVolumes: 0

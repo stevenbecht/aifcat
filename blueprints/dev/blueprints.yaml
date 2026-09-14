@@ -1,5 +1,5 @@
 resources:
-  - epinio-0.1.0.yaml
+  - epinio-0.1.1.yaml
   - inference-endpoint-litellm-vllm-1.0.0.yaml
   - inference-endpoint-litellm-vllm-1.0.1.yaml
   - nvidia-aiq-with-rag-1.0.0.yaml

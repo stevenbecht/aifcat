@@ -1,170 +1,132 @@
-# Epinio catalog blueprint
+# Epinio local demo
 
-[`../dev/epinio-0.1.0.yaml`](../dev/epinio-0.1.0.yaml) is a portable AIF
-template for the official Epinio chart **1.14.2**, app **v1.14.2**. Import it,
-**Copy** it to a local Blueprint, configure that copy, then install it. The
-published template deliberately has no domain or registry password.
+[`../dev/epinio-0.1.1.yaml`](../dev/epinio-0.1.1.yaml) installs the official
+Epinio Helm chart **1.14.2** through AIF. Its HTTPS chart repository URL and
+example values are contained in one Blueprint. It needs AIF's direct HTTPS
+Blueprint chart-source support; no separate ClusterRepo is required.
 
-The chart was downloaded from the [official repository](https://epinio.github.io/helm-charts)
-and checked against its index. Archive SHA-256:
-`6a714a47856457cce130b31c4002e01ca5b3ef51bd63aae47ceda69e5cc6cdb4`.
-See the [release](https://github.com/epinio/helm-charts/releases/tag/epinio-1.14.2)
-and [installation documentation](https://docs.epinio.io/installation/install_epinio).
+- Address: `https://epinio.192.168.2.100.sslip.io`
+- Administrator: `admin` / `Epinio-Demo-2026!`
+- Registry password: `Epinio-Registry-Demo-2026!`
 
-## Before installation
+These are public demo credentials. Replace both passwords before using the
+example outside the local lab. Blueprint and Helm values contain the passwords;
+the chart creates the administrator and registry Secrets from those values.
+Dex is disabled and only the specified administrator account is created.
 
-- Register the public Helm source on the AIF management cluster:
-  `kubectl apply -f blueprints/epinio/cluster-repo.yaml` from your repository root.
-  This is separate from the Blueprint catalog: the importer accepts Blueprint
-  documents only, and `chartRepo: epinio` refers to this ClusterRepo's name.
-- The target cluster needs an existing ingress controller, cert-manager, and a
-  default StorageClass. This template requests RWO PVCs: 10Gi for the image
-  registry, 10Gi for source volumes, 1Gi each for source metadata and master
-  data, and 2Gi for image exports; staging caches request additional storage.
-  It uses the default provisioner rather than assuming local-path or a CSI vendor.
-- Wildcard DNS for `*.<domain>` must reach the ingress controller from clients
-  and the cluster. `sslip.io` is one option; an organization-owned domain works too.
-- Use one Epinio installation per cluster. Upstream creates shared ClusterIssuers
-  (`selfsigned-issuer`, `epinio-ca`), a `workspace` namespace, and registry NodePort
-  **30500**, even with a custom installation namespace. Check for name/port
-  conflicts first; AIF's deployment path permits Helm to take resource ownership.
-- See upstream [system requirements](https://docs.epinio.io/getting-started/system-requirements)
-  and [cluster prerequisites](https://docs.epinio.io/how-to/operator/cluster-prerequisites).
-  Installing Epinio also installs its packaged SeaweedFS, Reflector and application
-  Helm controller. These are upstream chart dependencies, not additions to AIF.
+## Demo: add a catalog and install Epinio
 
-## Configure the imported template
+The target cluster needs Traefik, cert-manager in namespace `cert-manager`,
+a default StorageClass, and DNS/ingress access to `*.192.168.2.100.sslip.io`.
+Install only once per cluster: the chart creates shared ClusterIssuers,
+a `workspace` namespace, and registry NodePort 30500.
 
-In AIF, refresh your Dev catalog, select Epinio, choose **Copy**, and give the
-copy a local name such as `Epinio Lab`. In **Configuration**, expand `epinio`
-and select **YAML**. Edit the values below while preserving the other template
-settings, then review and create the copy. Do not select **Load defaults**:
-it replaces these settings with upstream defaults. The upstream Form hides
-the bundled registry's password and shows default-user fields this template disables.
+Before presenting, publish `blueprints/dev/epinio-0.1.1.yaml` and update
+`blueprints/dev/blueprints.yaml` in the GitHub repository. The existing index
+already lists the other Blueprint files; keep those references and files.
+The Epinio entry should be:
 
-| Value | Local Rancher example | Another installation |
-| --- | --- | --- |
-| `global.domain` | `192.168.2.100.sslip.io` | `apps.example.com` |
-| `ingress.ingressClassName` | `traefik` | Your ingress class, or empty for the default |
-| `global.registryPassword` | A unique, privately generated password | A unique, privately generated password |
-| `global.tlsIssuer` | `epinio-ca` | `epinio-ca`, or an upstream supported issuer |
-| `global.customTlsIssuer` | Empty | An existing **ClusterIssuer** name if using managed TLS |
-| `certManagerNamespace` | `cert-manager` | Your cert-manager namespace |
-
-For example, generate a registry password with `openssl rand -hex 32` and put
-it only in the local copy. Never publish that configured copy to your catalog.
-The upstream registry template consumes this password as a Helm value, and
-current AIF does not support a Secret reference for it. Anyone permitted to read
-the local Blueprint or generated Helm values can read it. Environments requiring
-Secret-only credential storage need that integration addressed before deployment.
-
-The empty domain fails chart validation; the null registry password also stops
-rendering after a domain is supplied. Replace the null with your unique password,
-not an empty string. These guards prevent inheriting upstream's example password.
-
-Current AIF's install wizard does not collect per-install Helm values. Although
-`AIWorkload.spec.componentValues` exists in the schema, Blueprint reconciliation
-does not consume it. Configure the local Blueprint copy instead. Imported versions
-stay immutable and portable; publish a new template version for later changes.
-
-Choose `epinio` as the target namespace when installing the copy. A different
-namespace works if you create the user Secret below in that namespace too.
-
-## Create the administrator in a Secret
-
-This template disables the default API accounts and Dex. In this chart version,
-Dex also creates accounts with known passwords even if `api.users` is empty.
-Epinio's standalone UI and CLI support local authentication without Dex.
-
-Before installing, create a user Secret on the **target cluster**. The following
-uses Apache's `htpasswd` to prompt for a password and produce a bcrypt hash;
-the plaintext password is not written to the command line or catalog. Run in Bash
-with the target cluster selected in kubectl:
-
-```bash
-(
-  set -euo pipefail
-  epinio_auth_dir=$(mktemp -d)
-  trap 'rm -rf "$epinio_auth_dir"' EXIT
-  printf '%s' admin > "$epinio_auth_dir/username"
-  htpasswd -nBC 12 admin | cut -d: -f2 | tr -d '\n' > "$epinio_auth_dir/password"
-  kubectl create namespace epinio --dry-run=client -o yaml | kubectl apply -f -
-  kubectl -n epinio create secret generic epinio-admin --type=BasicAuth \
-    --from-file=username="$epinio_auth_dir/username" \
-    --from-file=password="$epinio_auth_dir/password" \
-    --dry-run=client -o yaml | kubectl apply -f -
-  kubectl -n epinio label secret epinio-admin \
-    epinio.io/api-user-credentials=true --overwrite
-  kubectl -n epinio annotate secret epinio-admin epinio.io/roles=admin --overwrite
-)
+```yaml
+resources:
+  - epinio-0.1.1.yaml
 ```
 
-Keep this Secret separate from the Blueprint and public repository. See upstream
-[authorization](https://docs.epinio.io/next/references/authorization) for roles
-and user management. Use a different password from the registry password.
+Prepare the demo cluster with no Epinio installation and without this catalog
+registration. On the current lab, uninstall `epinio-local` through AIF and wait
+for Helm teardown before another installation. Remove the saved Partner
+Blueprints catalog before demonstrating Add. Removing a catalog retains its
+imports, so remove unused Epinio definitions as well if the demo should show
+Epinio appearing for the first time. Retained PVCs and certificates need review
+when preparing a completely fresh installation; catalog removal is not a reset
+of application data.
 
-## Ingress, certificates, and runtime limits
+During the demonstration:
 
-With the local values above, the Epinio UI/API is
-`https://epinio.192.168.2.100.sslip.io`. Rancher keeps its own hostname; both
-use the same Traefik controller and address. Epinio applications also inherit
-the selected ingress class. For another domain, the endpoint is `https://epinio.<domain>`.
+1. Open **Settings → Blueprint catalogs → Add another catalog**.
+2. Enter these values:
 
-Reusing ingress does not reuse Rancher's certificate. The default `epinio-ca`
-creates an Epinio CA and certificates through the existing cert-manager. Trust
-that CA on your client before using the endpoint; do not disable certificate
-verification globally. Its public certificate can be exported after issuance:
+   | Field | Value |
+   | --- | --- |
+   | Name | Partner Blueprints |
+   | Repository | `https://github.com/stevenbecht/aifcat` |
+   | Ref | `master` |
+   | Index path | `blueprints/dev/blueprints.yaml` |
 
-```bash
+3. Click **Save settings**. Saving the new catalog initiates its import.
+   Use **Check import status** to read the result; there is no polling timer.
+4. Open **Blueprints**, filter by **Partner Blueprints**, and select
+   **Epinio 0.1.1** from that catalog.
+5. Click **Install**, use workload name `epinio`, namespace `epinio`, target
+   cluster `local`, and deployment strategy **Fleet Bundle**. Review and install.
+6. Show the workload becoming **Running**, then open
+   `https://epinio.192.168.2.100.sslip.io` and log in as
+   `admin` / `Epinio-Demo-2026!`.
+
+The catalog imports the Blueprint. Install creates the AIWorkload, and the
+existing Fleet/Helm path installs Epinio using the chart URL and values in that
+Blueprint. The UI supplies the catalog-qualified family automatically. This
+demo requires no Copy step, separately registered Helm repository, or manual
+administrator Secret. Trust the local Epinio CA on the presentation client.
+
+## Direct installation with kubectl
+
+Apply the Blueprint directly:
+
+```sh
+kubectl apply -f /src/blueprints/dev/epinio-0.1.1.yaml
+```
+
+Then select **Epinio 0.1.1 → Install**, target cluster **local**, namespace
+**epinio**. No Copy or additional configuration step is needed.
+
+For installation entirely through kubectl, after applying the Blueprint:
+
+```sh
+kubectl create namespace epinio --dry-run=client -o yaml | kubectl apply -f -
+kubectl apply -f - <<'EOF'
+apiVersion: ai-factory.suse.com/v1alpha1
+kind: AIWorkload
+metadata:
+  name: epinio-local
+  namespace: epinio
+spec:
+  displayName: Epinio
+  source:
+    sourceType: Blueprint
+    blueprint:
+      name: epinio
+      version: 0.1.1
+  targetNamespace: epinio
+  targetClusters: [local]
+  deployStrategy: FleetBundle
+EOF
+```
+
+The kubectl example references the directly applied local Blueprint family.
+Applying a Blueprint registers its definition; an AIWorkload requests
+installation. Neither action needs a generator.
+
+## Certificates and validation
+
+The example uses Epinio's local CA through the existing cert-manager. Export
+its public certificate and trust it on your client to access the HTTPS endpoint:
+
+```sh
 kubectl -n cert-manager get secret epinio-ca-root \
   -o jsonpath='{.data.tls\.crt}' | base64 -d > epinio-ca.crt
 ```
 
-For trusted public DNS, set `global.customTlsIssuer` to an existing ClusterIssuer,
-or use upstream's `letsencrypt-production` and set `global.tlsIssuerEmail`.
-HTTP-01 issuance requires a reachable domain; the private local address is not
-an ACME public-ingress example. Rancher's namespaced Issuer is not a ClusterIssuer.
+The bundled registry serves node image pulls through HTTP `127.0.0.1:30500`.
+Validate a real application build and image pull on the target runtime.
+Persistent registry and source storage use the default provisioner; these
+single-replica components are intended for this local demo.
 
-The bundled registry uses HTTP `127.0.0.1:30500` for node image pulls. The runtime
-must allow this endpoint; it is separate from the local development registry on
-port 5000. Upstream supports an external registry through
-`containerregistry.enabled: false` and `global.registry*` values when encrypted
-node pulls or an existing registry are required. Reflector copies `registry-creds`
-into application namespaces; upstream currently enables reflection into all
-namespaces. This is a material permissions consideration on shared clusters.
+Verified on the local RKE2 cluster: AIF UI installation, administrator login,
+source upload/build, registry push, node image pull through `127.0.0.1:30500`,
+and the test application's HTTPS response with CA verification. The temporary
+application was removed after validation. Existing AIF workloads stayed Running.
 
-Persistent claims replace upstream hostPath/temporary data defaults, but these
-single-replica services are not highly available. The local example's provisioner
-uses node-local storage. Choose storage, capacity, backups and registry policy for
-the target environment. Chart rendering does not verify node image pulls or builds.
-
-## Publish and verify
-
-Keep `cluster-repo.yaml` and this README outside `dev/blueprints.yaml`. After
-editing authored files, regenerate from the directory containing `dev/`:
-
-```bash
-(
-  set -euo pipefail
-  export LC_ALL=C
-  {
-    printf '# Generated from individual Blueprint files in dev/.\n'
-    for blueprint_file in dev/*.yaml; do
-      [ "$blueprint_file" = dev/blueprints.yaml ] && continue
-      printf '\n---\n'
-      cat "$blueprint_file"
-    done
-  } > dev/blueprints.yaml.tmp
-  mv dev/blueprints.yaml.tmp dev/blueprints.yaml
-)
-```
-
-The Dev catalog contains the nine existing versions plus this template. Prod
-has not been changed. Publish when ready, refresh the saved catalog, and configure
-a local copy. This work does not push to GitHub or install Epinio.
-
-Validation covers the official chart digest, local Traefik/sslip.io rendering,
-another domain/ingress class, no default user accounts, persistent data claims,
-required configuration guards, and Kubernetes admission of the Blueprint and
-chart repository. A live install, login, app build/push and persistence test
-remain necessary before promoting the template to Prod.
+The chart comes from the [official Epinio repository](https://epinio.github.io/helm-charts).
+Verified chart archive SHA-256:
+`6a714a47856457cce130b31c4002e01ca5b3ef51bd63aae47ceda69e5cc6cdb4`.
+See the [upstream installation documentation](https://docs.epinio.io/installation/install_epinio).
